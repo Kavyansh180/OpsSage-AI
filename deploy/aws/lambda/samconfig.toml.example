@@ -1,0 +1,30 @@
+# ==============================================================================
+# OpsSage AI - AWS SAM Configuration Example
+# Copy to samconfig.toml and customize for your AWS environment
+# ==============================================================================
+
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "opssage-serverless-prod"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+region = "us-east-1"
+# Replace <AWS_ACCOUNT_ID> and <AWS_REGION> with your actual AWS account details
+# image_repositories = ["OpsSageBackendFunction=<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/opssage-backend-lambda"]
+parameter_overrides = [
+  "Environment=prod",
+  "AppName=opssage-ai",
+  "LambdaMemorySize=2048",
+  "LambdaTimeout=30",
+  "LogRetentionDays=14",
+  "GeminiModel=gemini-3.5-flash-lite"
+]

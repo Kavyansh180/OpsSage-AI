@@ -7,9 +7,12 @@ __pycache__
 venv
 env
 .git
+.github
 .gitignore
 .dockerignore
 .env
+.env.*
+!.env.example
 .pytest_cache
 .coverage
 htmlcov
@@ -17,4 +20,6 @@ htmlcov
 .idea
 *.log
 README.md
-tests
+docs/
+deploy/
+tests/

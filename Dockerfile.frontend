@@ -1,0 +1,52 @@
+# ==============================================================================
+# OpsSage AI - Frontend Dashboard Dockerfile (Streamlit)
+# Production-ready, non-root user, headless configuration
+# ==============================================================================
+
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    STREAMLIT_SERVER_ENABLE_CORS=false \
+    STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=true \
+    PATH="/home/appuser/.local/bin:$PATH"
+
+# Install curl for container health check
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root system user and working directory
+RUN groupadd --gid 10001 appgroup && \
+    useradd --uid 10001 --gid appgroup --shell /bin/bash --create-home appuser && \
+    mkdir -p /app && \
+    chown -R appuser:appgroup /home/appuser /app
+
+# Switch to non-root user
+USER appuser
+WORKDIR /app
+
+# Install minimal frontend dependencies
+RUN pip install --no-cache-dir --user \
+    "streamlit>=1.38.0,<1.39.0" \
+    "httpx>=0.27.0" \
+    "pandas>=2.0.0" \
+    "requests>=2.31.0"
+
+# Copy frontend source code
+COPY --chown=appuser:appgroup frontend /app/frontend
+
+# Expose Streamlit dashboard port
+EXPOSE 8501
+
+# Healthcheck targeting Streamlit core health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+# Launch Streamlit dashboard
+CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0"]

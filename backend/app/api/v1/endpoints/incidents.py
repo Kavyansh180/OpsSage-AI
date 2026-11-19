@@ -4,9 +4,21 @@ from fastapi import APIRouter, Depends, Query, status
 from pymongo.asynchronous.database import AsyncDatabase
 
 from backend.app.core.dependencies import get_current_user, get_db, require_role
+from backend.app.models.incident import IncidentStatus
 from backend.app.models.user import UserInDB, UserRole
-from backend.app.schemas.incident import IncidentResponse, PaginatedIncidentResponse
+from backend.app.schemas.audit import PaginatedAuditLogResponse
+from backend.app.schemas.incident import (
+    IncidentAssignRequest,
+    IncidentResolutionRequest,
+    IncidentResponse,
+    IncidentSeverityUpdateRequest,
+    IncidentVerifyResolutionRequest,
+    InvestigationNoteCreate,
+    PaginatedIncidentResponse,
+)
+from backend.app.services.audit_service import AuditService
 from backend.app.services.incident_detection_service import IncidentDetectionService
+from backend.app.services.incident_management_service import IncidentManagementService
 
 router = APIRouter(tags=["Incident Detection & Management"])
 
@@ -84,7 +96,7 @@ async def acknowledge_incident(
     Transitions incident from OPEN -> ACKNOWLEDGED.
     Restricted to Admin and Engineer roles. Viewers are forbidden (403).
     """
-    return await IncidentDetectionService.acknowledge_incident(
+    return await IncidentManagementService.acknowledge_incident(
         db=db,
         user=current_user,
         incident_id=incident_id
@@ -92,23 +104,213 @@ async def acknowledge_incident(
 
 
 @router.patch(
+    "/{incident_id}/assign",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Assign an incident to an engineer"
+)
+async def assign_incident(
+    incident_id: str,
+    payload: IncidentAssignRequest,
+    current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
+    db: AsyncDatabase = Depends(get_db),
+) -> IncidentResponse:
+    """
+    Assigns ownership of an incident to a designated engineer.
+    Restricted to Admin and Engineer roles. Viewers are forbidden (403).
+    """
+    return await IncidentManagementService.assign_incident(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+        payload=payload,
+    )
+
+
+@router.patch(
+    "/{incident_id}/severity",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update incident severity"
+)
+async def update_incident_severity(
+    incident_id: str,
+    payload: IncidentSeverityUpdateRequest,
+    current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
+    db: AsyncDatabase = Depends(get_db),
+) -> IncidentResponse:
+    """
+    Updates the priority/severity rating of an incident.
+    Restricted to Admin and Engineer roles. Viewers are forbidden (403).
+    """
+    return await IncidentManagementService.update_severity(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{incident_id}/notes",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an investigation note"
+)
+async def add_investigation_note(
+    incident_id: str,
+    payload: InvestigationNoteCreate,
+    current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
+    db: AsyncDatabase = Depends(get_db),
+) -> IncidentResponse:
+    """
+    Logs an investigation note against the incident.
+    Restricted to Admin and Engineer roles. Viewers are forbidden (403).
+    """
+    return await IncidentManagementService.add_investigation_note(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{incident_id}/resolution",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Record structured incident resolution"
+)
+@router.post(
     "/{incident_id}/resolve",
     response_model=IncidentResponse,
     status_code=status.HTTP_200_OK,
-    summary="Resolve an incident"
+    summary="Resolve incident with structured root cause"
 )
-async def resolve_incident(
+async def record_incident_resolution(
+    incident_id: str,
+    payload: IncidentResolutionRequest,
+    current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
+    db: AsyncDatabase = Depends(get_db),
+) -> IncidentResponse:
+    """
+    Records confirmed root-cause findings, resolution actions, and transitions incident to RESOLVED.
+    Synchronizes resolution into the historical Knowledge Base.
+    Restricted to Admin and Engineer roles. Viewers are forbidden (403).
+    """
+    return await IncidentManagementService.record_resolution(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+        payload=payload,
+    )
+
+
+@router.patch(
+    "/{incident_id}/resolve",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resolve an incident (simple transition)"
+)
+async def resolve_incident_simple(
     incident_id: str,
     current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
     db: AsyncDatabase = Depends(get_db),
 ) -> IncidentResponse:
     """
     Transitions incident from OPEN/ACKNOWLEDGED -> RESOLVED.
-    Permanently freezes the historical record; future occurrences trigger a fresh incident.
     Restricted to Admin and Engineer roles. Viewers are forbidden (403).
     """
-    return await IncidentDetectionService.resolve_incident(
+    resp = await IncidentDetectionService.resolve_incident(
         db=db,
         user=current_user,
         incident_id=incident_id
     )
+    await AuditService.record_event(
+        db=db,
+        incident_id=resp.incident_id,
+        user_id=resp.user_id,
+        actor=current_user,
+        action="RESOLVED",
+        details={"status": IncidentStatus.RESOLVED.value},
+    )
+    return resp
+
+
+@router.post(
+    "/{incident_id}/verify-resolution",
+    response_model=IncidentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Verify an incident resolution"
+)
+async def verify_incident_resolution(
+    incident_id: str,
+    payload: IncidentVerifyResolutionRequest,
+    current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
+    db: AsyncDatabase = Depends(get_db),
+) -> IncidentResponse:
+    """
+    Explicitly marks an incident's resolution as verified by an authorized human engineer.
+    Triggers Knowledge Base re-indexing with verified status and embedding updates.
+    Restricted to Admin and Engineer roles. Viewers are forbidden (403).
+    """
+    return await IncidentManagementService.verify_resolution(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+        payload=payload,
+    )
+
+
+@router.get(
+    "/{incident_id}/history",
+    response_model=PaginatedAuditLogResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve incident audit trail and activity history"
+)
+@router.get(
+    "/{incident_id}/audit",
+    response_model=PaginatedAuditLogResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve incident audit log"
+)
+async def get_incident_history(
+    incident_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    current_user: UserInDB = Depends(get_current_user),
+    db: AsyncDatabase = Depends(get_db),
+) -> PaginatedAuditLogResponse:
+    """
+    Retrieves chronological activity history for an incident.
+    Enforces tenant isolation: non-admins only see history for incidents they own.
+    """
+    return await AuditService.get_incident_history(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post(
+    "/{incident_id}/sync-knowledge",
+    status_code=status.HTTP_200_OK,
+    summary="Synchronize incident to Knowledge Base"
+)
+async def sync_incident_to_knowledge(
+    incident_id: str,
+    current_user: UserInDB = Depends(require_role(UserRole.ADMIN, UserRole.ENGINEER)),
+    db: AsyncDatabase = Depends(get_db),
+) -> dict:
+    """
+    Manually triggers re-indexing of an incident into the historical Knowledge Base.
+    Restricted to Admin and Engineer roles. Viewers are forbidden (403).
+    """
+    success = await IncidentManagementService.sync_knowledge_base(
+        db=db,
+        user=current_user,
+        incident_id=incident_id,
+    )
+    return {"incident_id": incident_id, "synced": success}

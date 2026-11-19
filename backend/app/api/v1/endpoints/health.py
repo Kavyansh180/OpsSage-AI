@@ -50,7 +50,11 @@ async def readiness_check(response: Response) -> ReadyResponse:
     Verifies downstream dependencies (e.g. MongoDB Atlas).
     Returns 200 when ready, or 503 if MongoDB is unreachable.
     """
-    is_db_connected = await MongoDBManager.ping()
+    try:
+        await MongoDBManager.ensure_database()
+        is_db_connected = await MongoDBManager.ping()
+    except Exception:
+        is_db_connected = False
 
     if is_db_connected:
         response.status_code = status.HTTP_200_OK

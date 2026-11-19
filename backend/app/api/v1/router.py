@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.app.api.v1.endpoints import auth, health, incidents, logs
+from backend.app.api.v1.endpoints import analytics, analysis, auth, health, incidents, knowledge, logs
 
 api_router = APIRouter()
 
@@ -14,5 +14,12 @@ api_router.include_router(logs.router, prefix="/logs")
 
 # Module 3: Deterministic Incident Detection
 api_router.include_router(incidents.router, prefix="/incidents", tags=["Incidents"])
-# api_router.include_router(analysis.router, prefix="/analysis", tags=["AI Root Cause Analysis"])
-# api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+
+# Module 4: AI Root Cause Analysis
+api_router.include_router(analysis.router, tags=["AI Root Cause Analysis"])
+
+# Module 5: RAG Historical Incident Retrieval
+api_router.include_router(knowledge.router)
+
+# Module 7: Analytics & KPIs
+api_router.include_router(analytics.router)

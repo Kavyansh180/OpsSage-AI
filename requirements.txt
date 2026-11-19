@@ -6,6 +6,7 @@
 # Web Framework & ASGI Server
 fastapi>=0.110.0,<0.112.0
 uvicorn[standard]>=0.28.0,<0.30.0
+mangum>=0.17.0
 
 # Centralized Settings & Data Validation
 pydantic>=2.6.4,<3.0.0
@@ -29,3 +30,10 @@ requests>=2.31.0
 # Testing & Quality Assurance
 pytest>=8.1.1
 pytest-asyncio>=0.23.6
+
+# Vector Embeddings & RAG (Module 5)
+sentence-transformers>=3.0.0
+
+# Frontend & Dashboard (Module 7)
+streamlit>=1.38.0,<1.39.0
+pandas>=2.0.0

@@ -1,0 +1,53 @@
+{
+  "family": "opssage-frontend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/opssage-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/opssage-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "frontend",
+      "image": "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/opssage-frontend:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8501,
+          "hostPort": 8501,
+          "protocol": "tcp",
+          "name": "http-frontend"
+        }
+      ],
+      "environment": [
+        { "name": "BACKEND_URL", "value": "http://<ALB_DNS_OR_SERVICE_NAME>:8000" },
+        { "name": "API_BASE_URL", "value": "http://<ALB_DNS_OR_SERVICE_NAME>:8000/api/v1" },
+        { "name": "STREAMLIT_SERVER_PORT", "value": "8501" },
+        { "name": "STREAMLIT_SERVER_ADDRESS", "value": "0.0.0.0" },
+        { "name": "STREAMLIT_SERVER_HEADLESS", "value": "true" },
+        { "name": "STREAMLIT_BROWSER_GATHER_USAGE_STATS", "value": "false" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/opssage-frontend",
+          "awslogs-region": "<AWS_REGION>",
+          "awslogs-stream-prefix": "frontend",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8501/_stcore/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 15
+      }
+    }
+  ]
+}

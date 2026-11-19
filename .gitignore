@@ -45,6 +45,7 @@ htmlcov/
 
 # Streamlit
 .streamlit/
+!.streamlit/secrets.toml.example
 
 # Sentence Transformers / HuggingFace Cache
 .cache/

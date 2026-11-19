@@ -30,12 +30,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Connect to MongoDB
     await MongoDBManager.connect()
 
-    # If connection was successful, initialize collection indexes
-    if await MongoDBManager.ping():
-        db = MongoDBManager.get_database()
-        await setup_database_indexes(db)
-    else:
-        logger.warning("Database ping unverified at startup. Skipping index initialization.")
+    # If connection was successful, optionally initialize collection indexes
+    if settings.INITIALIZE_INDEXES_ON_STARTUP:
+        if await MongoDBManager.ping():
+            db = MongoDBManager.get_database()
+            await setup_database_indexes(db)
+        else:
+            logger.warning("Database ping unverified at startup. Skipping index initialization.")
 
     yield
 
@@ -69,6 +70,7 @@ def create_application() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
+        allow_origin_regex=r"https://.*\.streamlit\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

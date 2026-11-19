@@ -1,0 +1,111 @@
+name: OpsSage AI Serverless CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+permissions:
+  contents: read
+  id-token: write  # Required for secure AWS OIDC role assumption (no long-lived secret keys)
+
+jobs:
+  lint-and-test:
+    name: Lint & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: Run Unit Tests
+        env:
+          APP_ENV: testing
+          JWT_SECRET_KEY: test-secret-key-at-least-32-chars-long-for-testing
+          JWT_ALGORITHM: HS256
+          MONGODB_URI: mongodb://localhost:27017
+          MONGODB_DATABASE: opssage_test
+          GEMINI_API_KEY: mock-gemini-api-key-for-unit-testing
+          EMBEDDING_PROVIDER: sentence-transformers
+          EMBEDDING_MODEL_NAME: sentence-transformers/all-MiniLM-L6-v2
+        run: |
+          pytest tests/unit -v --tb=short
+
+  build-and-validate-sam:
+    name: Build & Validate Serverless Lambda Container
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate SAM Template
+        run: |
+          sam validate --template deploy/aws/lambda/template.yaml --lint
+
+      - name: Build Lambda Container Image
+        run: |
+          sam build --template deploy/aws/lambda/template.yaml
+
+  # ==============================================================================
+  # AWS Serverless Deployment via GitHub OIDC (No long-lived AWS keys)
+  # Triggers only on push to master when AWS_ROLE_TO_ASSUME secret is configured.
+  # ==============================================================================
+  deploy-serverless:
+    name: Deploy to AWS Lambda via SAM (OIDC)
+    needs: [lint-and-test, build-and-validate-sam]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push' && secrets.AWS_ROLE_TO_ASSUME != ''
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: Configure AWS Credentials (GitHub OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: SAM Build
+        run: |
+          sam build --template deploy/aws/lambda/template.yaml
+
+      - name: SAM Deploy
+        run: |
+          sam deploy \
+            --stack-name opssage-serverless-prod \
+            --region ${{ secrets.AWS_REGION || 'us-east-1' }} \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --resolve-image-repos \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides Environment=prod

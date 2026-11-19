@@ -46,6 +46,19 @@ class IncidentSeverity(str, Enum):
         return self.rank(self) > self.rank(other)
 
 
+class InvestigationNote(BaseModel):
+    """
+    Engineer note attached to an incident during investigation.
+    """
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+    note_id: str
+    user_id: str
+    user_email: str
+    note: str
+    created_at: datetime
+
+
 class IncidentInDB(BaseModel):
     """
     Internal model representing an incident document stored in MongoDB.
@@ -70,5 +83,18 @@ class IncidentInDB(BaseModel):
     updated_at: datetime
     acknowledged_at: Optional[datetime] = None
     acknowledged_by: Optional[str] = None
+    assigned_to: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+    assigned_by: Optional[str] = None
+    investigation_notes: List[InvestigationNote] = Field(default_factory=list)
+    confirmed_root_cause: Optional[str] = None
+    confirmed_resolution: Optional[str] = None
+    resolution_actions: List[str] = Field(default_factory=list)
+    has_verified_resolution: bool = False
+    verified_at: Optional[datetime] = None
+    verified_by: Optional[str] = None
+    rca_analysis_id: Optional[str] = None
     resolved_at: Optional[datetime] = None
     resolved_by: Optional[str] = None
+    knowledge_synced: bool = False
+    knowledge_synced_at: Optional[datetime] = None
