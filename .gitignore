@@ -54,3 +54,8 @@ hf_cache/
 # Docker / Logs
 *.log
 docker-data/
+
+# Frontend React
+node_modules/
+frontend-react/node_modules/
+frontend-react/dist/
