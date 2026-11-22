@@ -64,24 +64,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, pass: string) => {
-    setLoading(true);
-    try {
-      const res = await authService.login({ email, password: pass });
-      setToken(res.access_token);
-      const currentUser = await authService.getCurrentUser();
-      setUser(currentUser);
-    } finally {
-      setLoading(false);
-    }
+    const res = await authService.login({ email, password: pass });
+    setToken(res.access_token);
+    const currentUser = await authService.getCurrentUser();
+    setUser(currentUser);
   };
 
   const register = async (email: string, pass: string, name: string) => {
-    setLoading(true);
-    try {
-      await authService.register({ email, password: pass, full_name: name });
-    } finally {
-      setLoading(false);
-    }
+    await authService.register({ email, password: pass, full_name: name });
   };
 
   const logout = () => {
