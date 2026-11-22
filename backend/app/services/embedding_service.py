@@ -41,8 +41,28 @@ class EmbeddingService:
         if cls._model_instance is None or cls._model_name != model_name:
             logger.info(f"Loading local embedding model: '{model_name}'...")
             try:
+                import glob
+                import os
+                try:
+                    import torch
+                    torch.set_num_threads(1)
+                except Exception:
+                    pass
+
+                # Resolve pre-cached local snapshot if present in container
+                target_path = model_name
+                cache_root = os.getenv("HF_HOME", "/var/task/model_cache")
+                repo_dir = "models--" + model_name.replace("/", "--")
+                snapshot_glob = os.path.join(cache_root, "hub", repo_dir, "snapshots", "*")
+                matches = glob.glob(snapshot_glob)
+                local_only = os.getenv("TRANSFORMERS_OFFLINE") == "1" or os.getenv("HF_HUB_OFFLINE") == "1"
+                if matches and os.path.isdir(matches[0]):
+                    target_path = matches[0]
+                    local_only = True
+                    logger.debug(f"Resolved pre-cached embedding model snapshot: {target_path}")
+
                 from sentence_transformers import SentenceTransformer
-                cls._model_instance = SentenceTransformer(model_name)
+                cls._model_instance = SentenceTransformer(target_path, device="cpu", local_files_only=local_only)
                 cls._model_name = model_name
                 cls._is_mock = False
                 logger.info(f"Embedding model '{model_name}' loaded successfully.")

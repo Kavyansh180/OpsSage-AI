@@ -20,6 +20,19 @@ logger = get_logger("lambda_handler")
 # and eliminating 100-200ms of reconnection/handshake latency per request.
 handler = Mangum(app, lifespan="off")
 
+# Pre-warm local embedding model in Lambda Init phase if container model cache is present.
+# Initializing during the container Init phase utilizes dedicated cold-start vCPUs and
+# eliminates 5-6 seconds of deferred import and load latency from live user requests.
+try:
+    import os
+    if os.path.exists("/var/task/model_cache"):
+        logger.info("Pre-warming local embedding model during Lambda container initialization...")
+        from backend.app.services.embedding_service import EmbeddingService
+        EmbeddingService.get_model("sentence-transformers/all-MiniLM-L6-v2")
+        logger.info("Embedding model pre-warmed successfully during container init.")
+except Exception as _init_exc:
+    logger.warning(f"Embedding model pre-warming skipped during Lambda init: {_init_exc}")
+
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Any, Dict, Optional, Tuple, Type, TypeVar
@@ -111,52 +112,78 @@ class GeminiProvider(LLMProvider):
             "x-goog-api-key": self._api_key,
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                response = await client.post(url, json=payload, headers=headers)
+        max_attempts = 3
+        last_status_code = None
+        last_sanitized_body = None
 
-            if response.status_code == 200:
-                data = response.json()
-                return self._extract_text_from_response(data)
+        for attempt in range(max_attempts):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
+                    response = await client.post(url, json=payload, headers=headers)
 
-            # Handle non-200 responses
-            status_code = response.status_code
-            error_body = response.text
+                if response.status_code == 200:
+                    data = response.json()
+                    return self._extract_text_from_response(data)
 
-            # Redact API key from error body if inadvertently reflected
-            sanitized_body = error_body.replace(self._api_key, "[REDACTED_API_KEY]")
-            logger.error(f"Gemini API returned HTTP {status_code}: {sanitized_body[:300]}")
+                # Handle non-200 responses
+                status_code = response.status_code
+                last_status_code = status_code
+                error_body = response.text
 
-            if status_code == 429:
-                raise LLMRateLimitError(
-                    "Gemini API quota or rate limit exceeded. Please try again later.",
-                    details={"provider": "gemini", "model": self._model},
-                )
-            elif status_code in (401, 403):
-                raise LLMConfigurationError(
-                    "Gemini API authentication failed. Verify the GEMINI_API_KEY setting.",
-                    details={"provider": "gemini"},
-                )
-            else:
+                # Redact API key from error body if inadvertently reflected
+                sanitized_body = error_body.replace(self._api_key, "[REDACTED_API_KEY]")
+                last_sanitized_body = sanitized_body
+
+                # Transient errors: retry with backoff
+                if status_code in (429, 500, 502, 503, 504) and attempt < max_attempts - 1:
+                    logger.warning(
+                        f"Gemini API returned HTTP {status_code} on attempt {attempt + 1}/{max_attempts}. "
+                        f"Retrying in {1.0 * (attempt + 1)}s..."
+                    )
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+
+                logger.error(f"Gemini API returned HTTP {status_code}: {sanitized_body[:300]}")
+
+                if status_code == 429:
+                    raise LLMRateLimitError(
+                        "Gemini API quota or rate limit exceeded. Please try again later.",
+                        details={"provider": "gemini", "model": self._model},
+                    )
+                elif status_code in (401, 403):
+                    raise LLMConfigurationError(
+                        "Gemini API authentication failed. Verify the GEMINI_API_KEY setting.",
+                        details={"provider": "gemini"},
+                    )
+                else:
+                    raise LLMError(
+                        f"Gemini API failed with HTTP {status_code}",
+                        details={"status_code": status_code, "provider": "gemini", "model": self._model},
+                    )
+
+            except httpx.TimeoutException as exc:
+                if attempt < max_attempts - 1:
+                    logger.warning(f"Gemini API request timed out on attempt {attempt + 1}/{max_attempts}. Retrying...")
+                    await asyncio.sleep(1.0 * (attempt + 1))
+                    continue
+                logger.error(f"Gemini API request timed out after {self._timeout_seconds}s")
+                raise LLMTimeoutError(
+                    f"Gemini API request timed out after {self._timeout_seconds} seconds.",
+                    details={"timeout_seconds": self._timeout_seconds, "model": self._model},
+                ) from exc
+            except (LLMError, LLMRateLimitError, LLMConfigurationError, LLMTimeoutError):
+                raise
+            except Exception as exc:
+                logger.exception("Unexpected error communicating with Gemini API")
                 raise LLMError(
-                    f"Gemini API failed with HTTP {status_code}",
-                    details={"status_code": status_code, "provider": "gemini", "model": self._model},
-                )
+                    f"Unexpected error communicating with Gemini API: {str(exc)}",
+                    details={"provider": "gemini", "model": self._model},
+                ) from exc
 
-        except httpx.TimeoutException as exc:
-            logger.error(f"Gemini API request timed out after {self._timeout_seconds}s")
-            raise LLMTimeoutError(
-                f"Gemini API request timed out after {self._timeout_seconds} seconds.",
-                details={"timeout_seconds": self._timeout_seconds, "model": self._model},
-            ) from exc
-        except (LLMError, LLMRateLimitError, LLMConfigurationError, LLMTimeoutError):
-            raise
-        except Exception as exc:
-            logger.exception("Unexpected error communicating with Gemini API")
-            raise LLMError(
-                f"Unexpected error communicating with Gemini API: {str(exc)}",
-                details={"provider": "gemini", "model": self._model},
-            ) from exc
+        raise LLMError(
+            f"Gemini API failed with HTTP {last_status_code}",
+            details={"status_code": last_status_code, "provider": "gemini", "model": self._model},
+        )
 
     async def generate_text(
         self,

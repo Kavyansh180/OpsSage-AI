@@ -41,6 +41,11 @@ Parameters:
     Default: gemini-3.5-flash-lite
     Description: Gemini model identifier for AI Root-Cause Analysis
 
+  ImageUri:
+    Type: String
+    Default: 091336586352.dkr.ecr.ap-south-1.amazonaws.com/opssage-backend:latest
+    Description: ECR container image URI for OpsSage AI backend
+
 Globals:
   Function:
     Timeout: !Ref LambdaTimeout
@@ -55,8 +60,7 @@ Resources:
     Properties:
       CorsConfiguration:
         AllowOrigins:
-          - "http://localhost:8501"
-          - "https://*.streamlit.app"
+          - "*"
         AllowHeaders:
           - "Content-Type"
           - "Authorization"
@@ -78,6 +82,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
+      ImageUri: !Ref ImageUri
       Architectures:
         - x86_64
       Environment:
@@ -100,6 +105,9 @@ Resources:
           EMBEDDING_PROVIDER: "sentence-transformers"
           EMBEDDING_MODEL_NAME: "sentence-transformers/all-MiniLM-L6-v2"
           EMBEDDING_DIMENSION: 384
+          HF_HOME: "/var/task/model_cache"
+          TRANSFORMERS_OFFLINE: "1"
+          HF_HUB_OFFLINE: "1"
           ATLAS_VECTOR_INDEX_NAME: "vector_index_knowledge_base"
           RAG_ENABLED: "true"
       Policies:
@@ -127,10 +135,6 @@ Resources:
             ApiId: !Ref OpsSageHttpApi
             Path: /{proxy+}
             Method: ANY
-    Metadata:
-      Dockerfile: deploy/aws/lambda/Dockerfile
-      DockerContext: ../../../
-      DockerTag: latest
 
   # ==============================================================================
   # CloudWatch Log Group with Strict Retention

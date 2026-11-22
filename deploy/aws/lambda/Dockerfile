@@ -32,6 +32,8 @@ RUN mkdir -p ${LAMBDA_TASK_ROOT}/model_cache && \
     python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
 
 # Copy application source code
+ARG CACHEBUST=1
+RUN echo "Building backend version: ${CACHEBUST}"
 COPY backend ${LAMBDA_TASK_ROOT}/backend
 COPY scripts ${LAMBDA_TASK_ROOT}/scripts
 
