@@ -19,7 +19,6 @@ export const authService = {
       email: payload.email.trim(),
       password: payload.password,
       full_name: payload.full_name.trim(),
-      role: payload.role || 'engineer',
     });
     return response.data;
   },
