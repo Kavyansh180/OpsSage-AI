@@ -197,9 +197,3 @@ npm test
 * **Automated Remediation Execution:** Opt-in automated rollback triggers via Kubernetes Operator upon high-confidence verified diagnoses.
 
 ---
-
-## 👤 Author
-
-**Kavyansh Singh**
-* **GitHub:** [@Kavyansh180](https://github.com/Kavyansh180)
-* **Project Repository:** [https://github.com/Kavyansh180/OpsSage-AI](https://github.com/Kavyansh180/OpsSage-AI)
